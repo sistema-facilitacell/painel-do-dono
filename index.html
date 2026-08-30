@@ -50,6 +50,16 @@
 
   .stats{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-bottom:24px}
   .stat{background:#fff;border:1px solid var(--line);border-radius:14px;padding:18px 20px}
+  .resumo-mes{background:linear-gradient(135deg,var(--navy),var(--navy2));border-radius:16px;padding:22px 26px;margin-bottom:16px;color:#fff;display:none}
+  .resumo-mes.show{display:block}
+  .resumo-mes h3{font-size:13px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--gold);margin-bottom:16px}
+  .resumo-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:20px}
+  .resumo-item .rv{font-size:26px;font-weight:800;line-height:1}
+  .resumo-item .rl{font-size:12.5px;color:rgba(200,222,255,.7);margin-top:5px}
+  .resumo-item.receber .rv{color:#4ADE80}
+  .resumo-item.pendente .rv{color:#FCD34D}
+  .resumo-item.perdido .rv{color:#F87171}
+  @media(max-width:600px){.resumo-grid{grid-template-columns:1fr;gap:14px}}
   .stat .n{font-size:28px;font-weight:800}
   .stat .l{font-size:12px;color:var(--muted);font-weight:600;text-transform:uppercase;letter-spacing:.05em;margin-top:2px}
   .stat.ok .n{color:var(--ok)} .stat.blk .n{color:var(--danger)} .stat.tot .n{color:var(--navy)} .stat.warn .n{color:var(--warn)}
@@ -77,6 +87,7 @@
   .btn-block{background:#FEE2E2;color:#B91C1C;border-color:#FCA5A5} .btn-block:hover{background:#FCA5A5;color:#fff}
   .btn-unblock{background:#DCFCE7;color:#15803D;border-color:#86EFAC} .btn-unblock:hover{background:#86EFAC;color:#052e16}
   .btn-pay{background:#EFF6FF;color:#1D4ED8;border-color:#93C5FD} .btn-pay:hover{background:#93C5FD;color:#fff}
+  .btn-wpp{background:#DCFCE7;color:#15803D;border-color:#86EFAC} .btn-wpp:hover{background:#25D366;color:#fff;border-color:#25D366}
   .btn-pass{background:#F5F3FF;color:#6D28D9;border-color:#C4B5FD} .btn-pass:hover{background:#C4B5FD;color:#fff}
   .btn-edit{background:#F8FAFC;color:#475569;border-color:#CBD5E1} .btn-edit:hover{background:#CBD5E1}
   .btn-hist{background:#F8FAFC;color:#475569;border-color:#CBD5E1} .btn-hist:hover{background:#CBD5E1}
@@ -156,6 +167,8 @@
   <div class="wrap">
     <div class="alerts" id="alerts"></div>
 
+    <div class="resumo-mes" id="resumo-mes"></div>
+
     <div class="stats">
       <div class="stat tot"><div class="n" id="st-total">0</div><div class="l">Clientes</div></div>
       <div class="stat ok"><div class="n" id="st-ativos">0</div><div class="l">Ativos</div></div>
@@ -192,6 +205,7 @@
     <div class="fld"><label>Firebase — App ID</label><input id="m-cli-appId" placeholder="1:...:web:..."></div>
     <div class="fld"><label>Firebase — Sender ID</label><input id="m-cli-senderId" placeholder="900..."></div>
     <div class="fld"><label>Link do sistema do cliente (opcional)</label><input id="m-cli-link" placeholder="https://...github.io/..."></div>
+    <div class="fld"><label>Anotações (só você vê)</label><textarea id="m-cli-obs" rows="3" placeholder="Ex: prefere pagar dia 5, indicado pela Maria, pediu desconto..."></textarea></div>
     <div class="modal-actions">
       <button class="m-cancel" onclick="fecharModal('modal-cli')">Cancelar</button>
       <button class="m-save" onclick="salvarCliente()">Salvar</button>
@@ -280,7 +294,7 @@
 // Quem abrir este código NÃO consegue descobrir sua senha a partir daqui.
 // Para trocar a senha: use o gerador em gerar-hash.html, copie o código e cole abaixo.
 // (O hash abaixo corresponde à senha temporária 218939 — TROQUE por uma senha forte.)
-const SENHA_DONO_HASH = '5b8d5b1e5f0e3c3e6a1b6d0f2a7c9e4d8b3f1a6c0e5d2b8f4a9c7e1d3b6f0a2c';
+const SENHA_DONO_HASH = 'a21b519023257dcdbf213a6b7c3a9b91c65b29dda41230e4b3b17be50e6a448e';
 
 async function _hashSenha(txt){
   const enc = new TextEncoder();
@@ -352,6 +366,7 @@ function render(){
   document.getElementById('st-receita').textContent='R$'+receita.toLocaleString('pt-BR');
 
   renderAvisos();
+  renderResumoMes();
 
   if(lista.length===0){
     cont.innerHTML=`<div class="empty">
@@ -382,10 +397,12 @@ function render(){
           ${c.proxVenc?' • Vence: '+fmtData(c.proxVenc):''}
           ${c.projectId?' • <span class="pill-copy" onclick="copiar(\''+escapeHtml(c.projectId)+'\')">'+escapeHtml(c.projectId)+'</span>':''}
           ${bloqueado&&c.motivo?'<br><span style="color:#B91C1C;font-weight:600">Motivo: '+escapeHtml(c.motivo)+'</span>':''}
+          ${c.obs?'<br><span style="color:#64748b">📝 '+escapeHtml(c.obs)+'</span>':''}
         </div>
       </div>
       <div class="cli-actions">
         <button class="btn btn-pay" onclick="abrirPagamento('${c.id}')">💰 Pagou</button>
+        ${c.contato?`<button class="btn btn-wpp" onclick="abrirWhats('${c.id}')">💬 WhatsApp</button>`:''}
         ${bloqueado
           ? `<button class="btn btn-unblock" onclick="desbloquear('${c.id}')">✓ Desbloquear</button>`
           : `<button class="btn btn-block" onclick="abrirBloqueio('${c.id}')">🔒 Bloquear</button>`}
@@ -415,11 +432,31 @@ function renderAvisos(){
   cont.innerHTML=html;
 }
 
+function renderResumoMes(){
+  const box=document.getElementById('resumo-mes');
+  if(CLIENTES.length===0){ box.classList.remove('show'); return; }
+  // a receber: clientes ativos * valor
+  const aReceber=CLIENTES.filter(c=>c.ativo!==false).reduce((s,c)=>s+(Number(c.valor)||0),0);
+  // pendente: ativos atrasados (vencidos mas ainda não bloqueados)
+  const pendente=CLIENTES.filter(c=>{ if(c.ativo===false)return false; const d=diasAteVenc(c); return d!==null && d<0; }).reduce((s,c)=>s+(Number(c.valor)||0),0);
+  // perdido: bloqueados
+  const perdido=CLIENTES.filter(c=>c.ativo===false).reduce((s,c)=>s+(Number(c.valor)||0),0);
+  const mesNome=new Date().toLocaleDateString('pt-BR',{month:'long',year:'numeric'});
+  box.innerHTML=`
+    <h3>Resumo de ${mesNome}</h3>
+    <div class="resumo-grid">
+      <div class="resumo-item receber"><div class="rv">R$${aReceber.toLocaleString('pt-BR')}</div><div class="rl">A receber dos clientes ativos</div></div>
+      <div class="resumo-item pendente"><div class="rv">R$${pendente.toLocaleString('pt-BR')}</div><div class="rl">Em atraso (ainda ativos)</div></div>
+      <div class="resumo-item perdido"><div class="rv">R$${perdido.toLocaleString('pt-BR')}</div><div class="rl">Suspenso (bloqueados)</div></div>
+    </div>`;
+  box.classList.add('show');
+}
+
 function escapeHtml(s){ return String(s||'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m])); }
 
 function abrirNovo(){
   document.getElementById('m-cli-title').textContent='Novo Cliente';
-  ['id','nome','contato','valor','diaVenc','email','projectId','apiKey','appId','senderId','link'].forEach(f=>{
+  ['id','nome','contato','valor','diaVenc','email','projectId','apiKey','appId','senderId','link','obs'].forEach(f=>{
     const el=document.getElementById('m-cli-'+f); if(el)el.value='';
   });
   document.getElementById('m-cli-valor').value='97';
@@ -440,6 +477,7 @@ function abrirEditar(id){
   document.getElementById('m-cli-appId').value=c.appId||'';
   document.getElementById('m-cli-senderId').value=c.senderId||'';
   document.getElementById('m-cli-link').value=c.link||'';
+  document.getElementById('m-cli-obs').value=c.obs||'';
   abrirModal('modal-cli');
 }
 function salvarCliente(){
@@ -459,6 +497,7 @@ function salvarCliente(){
     appId:document.getElementById('m-cli-appId').value.trim(),
     senderId:document.getElementById('m-cli-senderId').value.trim(),
     link:document.getElementById('m-cli-link').value.trim(),
+    obs:document.getElementById('m-cli-obs').value.trim(),
   };
   if(idx>=0){
     const ant=CLIENTES[idx];
@@ -531,6 +570,30 @@ async function desbloquear(id){
     salvar(); render();
     toast('✓ '+c.nome+' reativado!','ok');
   }catch(e){ toast('Erro: '+e.message,'err'); }
+}
+
+function abrirWhats(id){
+  const c=CLIENTES.find(x=>x.id===id); if(!c)return;
+  // limpa o telefone: tira tudo que não for número
+  let tel=(c.contato||'').replace(/\D/g,'');
+  if(!tel){ toast('Este cliente não tem WhatsApp cadastrado.','err'); return; }
+  // adiciona 55 (Brasil) se não tiver
+  if(tel.length<=11) tel='55'+tel;
+  // monta mensagem conforme o status
+  let msg;
+  if(c.ativo===false){
+    msg=`Olá! Sobre o seu acesso ao Atlas RH (${c.nome}): ${c.mensagem||'ele está suspenso no momento. Vamos regularizar?'}`;
+  }else{
+    const dias=diasAteVenc(c);
+    if(dias!==null && dias<0){
+      msg=`Olá! Passando para lembrar que a mensalidade do Atlas RH (${c.nome}) venceu há ${Math.abs(dias)} dia(s). Consegue regularizar?`;
+    }else if(dias!==null && dias<=5){
+      msg=`Olá! Passando para lembrar que a mensalidade do Atlas RH (${c.nome}) vence em ${dias} dia(s).`;
+    }else{
+      msg=`Olá! Aqui é sobre o seu Atlas RH (${c.nome}).`;
+    }
+  }
+  window.open('https://wa.me/'+tel+'?text='+encodeURIComponent(msg),'_blank');
 }
 
 function abrirPagamento(id){
