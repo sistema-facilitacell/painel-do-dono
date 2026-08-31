@@ -343,7 +343,8 @@ async function carregar(){
     CLIENTES = snap.exists ? (snap.data().lista||[]) : [];
     localStorage.setItem(STORE_KEY, JSON.stringify(CLIENTES)); // cache offline
   }catch(e){
-    toast('Sem conexão com o Firebase — mostrando dados salvos localmente.','err');
+    console.error('Erro Firestore (carregar):', e);
+    toast('Sem conexão com o Firebase ('+(e.code||e.message)+') — mostrando dados salvos localmente.','err');
     try{ CLIENTES=JSON.parse(localStorage.getItem(STORE_KEY)||'[]'); }catch(_){ CLIENTES=[]; }
   }
   render();
@@ -354,7 +355,7 @@ async function salvar(){
     await dbDono.collection('painel_dono').doc('clientes').set({
       lista:CLIENTES, atualizadoEm:new Date().toISOString()
     });
-  }catch(e){ toast('Erro ao salvar no Firebase: '+e.message,'err'); }
+  }catch(e){ console.error('Erro Firestore (salvar):', e); toast('Erro ao salvar no Firebase ('+(e.code||e.message)+').','err'); }
 }
 
 function diasAteVenc(c){
