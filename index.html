@@ -296,6 +296,19 @@
 // (O hash abaixo corresponde à senha temporária 218939 — TROQUE por uma senha forte.)
 const SENHA_DONO_HASH = 'a21b519023257dcdbf213a6b7c3a9b91c65b29dda41230e4b3b17be50e6a448e';
 
+// Firebase próprio do painel do dono (guarda a lista de clientes).
+// Separado dos projetos individuais de cada cliente (usados só p/ bloqueio/desbloqueio).
+const DONO_FIREBASE_CONFIG = {
+  apiKey: "AIzaSyDI_AfOK3A9LI_xqTyxtnV1oYSk3rtife0",
+  authDomain: "painel-do-dono.firebaseapp.com",
+  projectId: "painel-do-dono",
+  storageBucket: "painel-do-dono.firebasestorage.app",
+  messagingSenderId: "44627900780",
+  appId: "1:44627900780:web:d9b4f5888cefef02395b49"
+};
+firebase.initializeApp(DONO_FIREBASE_CONFIG);
+const dbDono = firebase.firestore();
+
 async function _hashSenha(txt){
   const enc = new TextEncoder();
   const buf = await crypto.subtle.digest('SHA-256', enc.encode(txt));
@@ -310,7 +323,7 @@ async function entrarDono(){
     sessionStorage.setItem('atlas_dono_ok','1');
     document.getElementById('gate').style.display='none';
     document.getElementById('app').style.display='block';
-    carregar();
+    await carregar();
   }else{ err.style.display='block'; err.textContent='Senha incorreta.'; document.getElementById('gate-pass').value=''; }
 }
 const STORE_KEY = 'atlas_dono_clientes';
@@ -321,13 +334,28 @@ function sairDono(){ sessionStorage.removeItem('atlas_dono_ok'); location.reload
 if(sessionStorage.getItem('atlas_dono_ok')==='1'){
   document.getElementById('gate').style.display='none';
   document.getElementById('app').style.display='block';
+  carregar();
 }
 
-function carregar(){
-  try{ CLIENTES=JSON.parse(localStorage.getItem(STORE_KEY)||'[]'); }catch(_){ CLIENTES=[]; }
+async function carregar(){
+  try{
+    const snap=await dbDono.collection('painel_dono').doc('clientes').get();
+    CLIENTES = snap.exists ? (snap.data().lista||[]) : [];
+    localStorage.setItem(STORE_KEY, JSON.stringify(CLIENTES)); // cache offline
+  }catch(e){
+    toast('Sem conexão com o Firebase — mostrando dados salvos localmente.','err');
+    try{ CLIENTES=JSON.parse(localStorage.getItem(STORE_KEY)||'[]'); }catch(_){ CLIENTES=[]; }
+  }
   render();
 }
-function salvar(){ localStorage.setItem(STORE_KEY, JSON.stringify(CLIENTES)); }
+async function salvar(){
+  localStorage.setItem(STORE_KEY, JSON.stringify(CLIENTES)); // cache offline
+  try{
+    await dbDono.collection('painel_dono').doc('clientes').set({
+      lista:CLIENTES, atualizadoEm:new Date().toISOString()
+    });
+  }catch(e){ toast('Erro ao salvar no Firebase: '+e.message,'err'); }
+}
 
 function diasAteVenc(c){
   if(!c.proxVenc) return null;
