@@ -351,10 +351,8 @@ function _getPainelDB(){
 }
 
 function sairDono(){ sessionStorage.removeItem('atlas_dono_ok'); location.reload(); }
-if(sessionStorage.getItem('atlas_dono_ok')==='1'){
-  document.getElementById('gate').style.display='none';
-  document.getElementById('app').style.display='block';
-}
+// A restauração de sessão + carregamento ao recarregar fica no FINAL do script,
+// depois que todas as funções (carregar, etc.) já estão definidas.
 
 // Carrega a lista: primeiro mostra o cache local (rápido), depois busca da nuvem.
 async function carregar(){
@@ -852,6 +850,17 @@ function toast(msg,tipo){
   el.textContent=msg; el.className='toast show '+(tipo||'');
   clearTimeout(_toastT); _toastT=setTimeout(()=>el.className='toast',3200);
 }
+
+// ── RESTAURAÇÃO DE SESSÃO AO RECARREGAR ──
+// Se a página foi recarregada e a sessão do dono ainda está ativa,
+// carrega os dados automaticamente (senão ficaria preso em "Sincronizando").
+(function restaurarSessao(){
+  if(sessionStorage.getItem('atlas_dono_ok')==='1'){
+    document.getElementById('gate').style.display='none';
+    document.getElementById('app').style.display='block';
+    carregar(); // agora carregar() já está definida — funciona no reload
+  }
+})();
 </script>
 </body>
 </html>
