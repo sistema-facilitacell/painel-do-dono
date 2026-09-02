@@ -43,6 +43,19 @@
 
   .alerts{margin-bottom:20px;display:flex;flex-direction:column;gap:10px}
   .alert{border-radius:12px;padding:13px 18px;display:flex;align-items:center;gap:12px;font-size:14px;font-weight:600}
+  .fila-banner{background:linear-gradient(135deg,#7C3AED,#9333EA);color:#fff;border-radius:16px;padding:18px 22px;margin-bottom:16px}
+  .fila-banner h3{font-size:16px;font-weight:800;display:flex;align-items:center;gap:10px;margin-bottom:4px}
+  .fila-banner p{font-size:13px;opacity:.9}
+  .fila-card{background:#fff;border:2px solid #C4B5FD;border-radius:14px;padding:18px 20px;margin-bottom:12px}
+  .fila-card .fc-nome{font-size:16px;font-weight:800;color:var(--navy);display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+  .fila-card .fc-meta{font-size:13px;color:var(--muted);margin-top:6px;line-height:1.7}
+  .fila-card .fc-cred{background:#F5F3FF;border:1px solid #DDD6FE;border-radius:10px;padding:10px 12px;margin-top:10px;font-size:13px}
+  .fila-card .fc-cred b{color:#6D28D9}
+  .fc-copy{cursor:pointer;background:#EDE9FE;color:#6D28D9;padding:2px 8px;border-radius:6px;font-weight:600;font-size:12px;margin-left:6px}
+  .fc-copy:hover{background:#DDD6FE}
+  .fila-badge{font-size:11px;font-weight:800;padding:3px 10px;border-radius:20px}
+  .fila-badge.assinado{background:#DCFCE7;color:#15803D}
+  .fila-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:14px}
   .alert.late{background:#FEF2F2;border:1px solid #FECACA;color:#B91C1C}
   .alert.soon{background:#FFFBEB;border:1px solid #FDE68A;color:#92400E}
   .alert .ico{font-size:20px}
@@ -157,6 +170,7 @@
       <div class="brand-txt"><b>Atlas RH</b><span>Painel do Dono</span></div>
     </div>
     <div class="header-actions">
+      <span id="sync-status" style="font-size:12px;font-weight:600;color:#4ADE80;margin-right:6px">☁ Sincronizando...</span>
       <button class="header-btn" onclick="exportarBackup()">⬇ Backup</button>
       <button class="header-btn" onclick="document.getElementById('import-file').click()">⬆ Importar</button>
       <input type="file" id="import-file" accept=".json" style="display:none" onchange="importarBackup(event)">
@@ -166,6 +180,7 @@
 
   <div class="wrap">
     <div class="alerts" id="alerts"></div>
+    <div id="fila-espera"></div>
 
     <div class="resumo-mes" id="resumo-mes"></div>
 
@@ -296,19 +311,6 @@
 // (O hash abaixo corresponde à senha temporária 218939 — TROQUE por uma senha forte.)
 const SENHA_DONO_HASH = 'a21b519023257dcdbf213a6b7c3a9b91c65b29dda41230e4b3b17be50e6a448e';
 
-// Firebase próprio do painel do dono (guarda a lista de clientes).
-// Separado dos projetos individuais de cada cliente (usados só p/ bloqueio/desbloqueio).
-const DONO_FIREBASE_CONFIG = {
-  apiKey: "AIzaSyDI_AfOK3A9LI_xqTyxtnV1oYSk3rtife0",
-  authDomain: "painel-do-dono.firebaseapp.com",
-  projectId: "painel-do-dono",
-  storageBucket: "painel-do-dono.firebasestorage.app",
-  messagingSenderId: "44627900780",
-  appId: "1:44627900780:web:d9b4f5888cefef02395b49"
-};
-firebase.initializeApp(DONO_FIREBASE_CONFIG);
-const dbDono = firebase.firestore();
-
 async function _hashSenha(txt){
   const enc = new TextEncoder();
   const buf = await crypto.subtle.digest('SHA-256', enc.encode(txt));
@@ -323,39 +325,146 @@ async function entrarDono(){
     sessionStorage.setItem('atlas_dono_ok','1');
     document.getElementById('gate').style.display='none';
     document.getElementById('app').style.display='block';
-    await carregar();
+    carregar();
   }else{ err.style.display='block'; err.textContent='Senha incorreta.'; document.getElementById('gate-pass').value=''; }
 }
 const STORE_KEY = 'atlas_dono_clientes';
 const DIAS_AVISO = 5;
 let CLIENTES = [];
 
+// ── Firebase do PAINEL (onde a lista de clientes fica salva na nuvem) ──
+const PAINEL_FB_CONFIG = {
+  apiKey: "AIzaSyDI_AfOK3A9LI_xqTyxtnV1oYSk3rtife0",
+  authDomain: "painel-do-dono.firebaseapp.com",
+  projectId: "painel-do-dono",
+  storageBucket: "painel-do-dono.firebasestorage.app",
+  messagingSenderId: "44627900780",
+  appId: "1:44627900780:web:d9b4f5888cefef02395b49"
+};
+let _painelDB = null;
+function _getPainelDB(){
+  if(_painelDB) return _painelDB;
+  let app = firebase.apps.find(a=>a.name==='painel');
+  if(!app) app = firebase.initializeApp(PAINEL_FB_CONFIG, 'painel');
+  _painelDB = firebase.firestore(app);
+  return _painelDB;
+}
+
 function sairDono(){ sessionStorage.removeItem('atlas_dono_ok'); location.reload(); }
 if(sessionStorage.getItem('atlas_dono_ok')==='1'){
   document.getElementById('gate').style.display='none';
   document.getElementById('app').style.display='block';
-  carregar();
 }
 
+// Carrega a lista: primeiro mostra o cache local (rápido), depois busca da nuvem.
 async function carregar(){
-  try{
-    const snap=await dbDono.collection('painel_dono').doc('clientes').get();
-    CLIENTES = snap.exists ? (snap.data().lista||[]) : [];
-    localStorage.setItem(STORE_KEY, JSON.stringify(CLIENTES)); // cache offline
-  }catch(e){
-    console.error('Erro Firestore (carregar):', e);
-    toast('Sem conexão com o Firebase ('+(e.code||e.message)+') — mostrando dados salvos localmente.','err');
-    try{ CLIENTES=JSON.parse(localStorage.getItem(STORE_KEY)||'[]'); }catch(_){ CLIENTES=[]; }
-  }
+  // 1) cache local imediato (para não ficar tela vazia)
+  try{ CLIENTES=JSON.parse(localStorage.getItem(STORE_KEY)||'[]'); }catch(_){ CLIENTES=[]; }
   render();
-}
-async function salvar(){
-  localStorage.setItem(STORE_KEY, JSON.stringify(CLIENTES)); // cache offline
+  // 2) busca da nuvem (fonte da verdade)
   try{
-    await dbDono.collection('painel_dono').doc('clientes').set({
-      lista:CLIENTES, atualizadoEm:new Date().toISOString()
+    const db=_getPainelDB();
+    const doc=await db.collection('painel').doc('clientes').get();
+    if(doc.exists && Array.isArray(doc.data().lista)){
+      CLIENTES=doc.data().lista;
+      localStorage.setItem(STORE_KEY, JSON.stringify(CLIENTES)); // atualiza cache
+      render();
+    }else if(CLIENTES.length){
+      // nuvem vazia mas tenho dados locais → sobe para a nuvem
+      await _salvarNuvem();
+    }
+    _statusNuvem(true);
+  }catch(e){
+    console.warn('Não consegui ler da nuvem (usando cache local):', e.message);
+    _statusNuvem(false);
+  }
+  // carrega a fila de espera (clientes que assinaram e aguardam cadastro)
+  carregarFilaEspera();
+}
+
+/* ============ FILA DE ESPERA (novos clientes aguardando cadastro) ============ */
+let AGUARDANDO=[];
+async function carregarFilaEspera(){
+  try{
+    const db=_getPainelDB();
+    const snap=await db.collection('aguardando').where('cadastrado','==',false).get();
+    AGUARDANDO=[];
+    snap.forEach(doc=>{ AGUARDANDO.push({_id:doc.id, ...doc.data()}); });
+    renderFilaEspera();
+  }catch(e){ console.warn('Fila de espera:', e.message); }
+}
+
+function renderFilaEspera(){
+  const cont=document.getElementById('fila-espera');
+  if(!AGUARDANDO.length){ cont.innerHTML=''; return; }
+  let html=`<div class="fila-banner"><h3>🔔 ${AGUARDANDO.length} cliente(s) aguardando cadastro</h3><p>Assinaram o contrato e escolheram a senha. Crie o login de cada um e marque como cadastrado.</p></div>`;
+  AGUARDANDO.forEach(a=>{
+    html+=`<div class="fila-card">
+      <div class="fc-nome">${escapeHtml(a.empresa||a.nome)} <span class="fila-badge assinado">✓ Contrato assinado</span></div>
+      <div class="fc-meta">
+        Responsável: ${escapeHtml(a.nome||'-')}<br>
+        WhatsApp: ${escapeHtml(a.fone||'-')} • Plano: ${escapeHtml(a.plano||'-')} • Vencimento: dia ${escapeHtml(a.venc||'-')}<br>
+        CNPJ/CPF: ${escapeHtml(a.doc||'-')}
+      </div>
+      <div class="fc-cred">
+        <b>Login (e-mail):</b> ${escapeHtml(a.email||'-')} <span class="fc-copy" onclick="copiar('${escapeHtml(a.email||'')}')">copiar</span><br>
+        <b>Senha escolhida:</b> ${escapeHtml(a.senha||'-')} <span class="fc-copy" onclick="copiar('${escapeHtml(a.senha||'')}')">copiar</span>
+      </div>
+      <div class="fila-actions">
+        <button class="btn btn-unblock" onclick="marcarCadastrado('${a._id}','${escapeHtml(a.empresa||a.nome)}')">✓ Já cadastrei</button>
+        ${a.fone?`<button class="btn btn-wpp" onclick="window.open('https://wa.me/${(a.fone||'').replace(/\\D/g,'').length<=11?'55':''}${(a.fone||'').replace(/\\D/g,'')}','_blank')">💬 WhatsApp</button>`:''}
+        <button class="btn btn-del" onclick="removerAguardando('${a._id}')">🗑 Remover</button>
+      </div>
+    </div>`;
+  });
+  cont.innerHTML=html;
+}
+
+async function marcarCadastrado(id, nome){
+  if(!confirm('Confirmar que você já criou o login de "'+nome+'" no Firebase do cliente?\n\nA senha será apagada do registro por segurança e o cliente sai da fila.'))return;
+  try{
+    const db=_getPainelDB();
+    // apaga a senha e marca como cadastrado
+    await db.collection('aguardando').doc(id).update({ cadastrado:true, senha:'(apagada após cadastro)', cadastradoEm:new Date().toISOString() });
+    toast('✓ Cliente cadastrado e removido da fila!','ok');
+    carregarFilaEspera();
+  }catch(e){ toast('Erro: '+e.message,'err'); }
+}
+
+async function removerAguardando(id){
+  if(!confirm('Remover este cliente da fila de espera?'))return;
+  try{
+    const db=_getPainelDB();
+    await db.collection('aguardando').doc(id).delete();
+    toast('Removido da fila.','ok');
+    carregarFilaEspera();
+  }catch(e){ toast('Erro: '+e.message,'err'); }
+}
+
+// Salva: no cache local (instantâneo) E na nuvem (permanente).
+function salvar(){
+  localStorage.setItem(STORE_KEY, JSON.stringify(CLIENTES)); // cache local
+  _salvarNuvem(); // nuvem (assíncrono)
+}
+async function _salvarNuvem(){
+  try{
+    const db=_getPainelDB();
+    await db.collection('painel').doc('clientes').set({
+      lista: CLIENTES,
+      atualizadoEm: new Date().toISOString()
     });
-  }catch(e){ console.error('Erro Firestore (salvar):', e); toast('Erro ao salvar no Firebase ('+(e.code||e.message)+').','err'); }
+    _statusNuvem(true);
+  }catch(e){
+    console.warn('Não consegui salvar na nuvem:', e.message);
+    _statusNuvem(false);
+  }
+}
+// mostra um indicador de sincronização no cabeçalho
+function _statusNuvem(ok){
+  const el=document.getElementById('sync-status');
+  if(!el) return;
+  el.textContent = ok ? '☁ Salvo na nuvem' : '⚠ Sem conexão (só local)';
+  el.style.color = ok ? '#4ADE80' : '#FCD34D';
 }
 
 function diasAteVenc(c){
