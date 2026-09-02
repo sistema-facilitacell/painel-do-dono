@@ -361,7 +361,7 @@ async function carregar(){
   // 1) cache local imediato (para não ficar tela vazia)
   try{ CLIENTES=JSON.parse(localStorage.getItem(STORE_KEY)||'[]'); }catch(_){ CLIENTES=[]; }
   render();
-  // 2) busca da nuvem (fonte da verdade)
+  // 2) busca da nuvem (fonte da verdade) — isolado, não deixa nada travar
   try{
     const db=_getPainelDB();
     const doc=await db.collection('painel').doc('clientes').get();
@@ -369,16 +369,19 @@ async function carregar(){
       CLIENTES=doc.data().lista;
       localStorage.setItem(STORE_KEY, JSON.stringify(CLIENTES)); // atualiza cache
       render();
+      _statusNuvem(true);
     }else if(CLIENTES.length){
-      // nuvem vazia mas tenho dados locais → sobe para a nuvem
-      await _salvarNuvem();
+      // nuvem vazia mas tenho dados locais → sobe para a nuvem (sem travar o resto)
+      _salvarNuvem();
+      _statusNuvem(true);
+    }else{
+      _statusNuvem(true); // conectou, mas está tudo vazio mesmo
     }
-    _statusNuvem(true);
   }catch(e){
-    console.warn('Não consegui ler da nuvem (usando cache local):', e.message);
-    _statusNuvem(false);
+    console.error('[painel] erro ao ler clientes da nuvem:', e.code, e.message);
+    _statusNuvem(false, e.message);
   }
-  // carrega a fila de espera (clientes que assinaram e aguardam cadastro)
+  // carrega a fila de espera SEPARADAMENTE (um erro aqui não afeta os clientes)
   carregarFilaEspera();
 }
 
@@ -387,11 +390,15 @@ let AGUARDANDO=[];
 async function carregarFilaEspera(){
   try{
     const db=_getPainelDB();
-    const snap=await db.collection('aguardando').where('cadastrado','==',false).get();
+    // busca todos e filtra no código (evita precisar de índice do Firestore no 'where')
+    const snap=await db.collection('aguardando').get();
     AGUARDANDO=[];
-    snap.forEach(doc=>{ AGUARDANDO.push({_id:doc.id, ...doc.data()}); });
+    snap.forEach(doc=>{
+      const d=doc.data();
+      if(d.cadastrado!==true){ AGUARDANDO.push({_id:doc.id, ...d}); }
+    });
     renderFilaEspera();
-  }catch(e){ console.warn('Fila de espera:', e.message); }
+  }catch(e){ console.warn('[painel] fila de espera indisponível:', e.code, e.message); }
 }
 
 function renderFilaEspera(){
@@ -460,11 +467,19 @@ async function _salvarNuvem(){
   }
 }
 // mostra um indicador de sincronização no cabeçalho
-function _statusNuvem(ok){
+function _statusNuvem(ok, erro){
   const el=document.getElementById('sync-status');
   if(!el) return;
-  el.textContent = ok ? '☁ Salvo na nuvem' : '⚠ Sem conexão (só local)';
-  el.style.color = ok ? '#4ADE80' : '#FCD34D';
+  if(ok){
+    el.textContent = '☁ Salvo na nuvem';
+    el.style.color = '#4ADE80';
+    el.title='';
+  }else{
+    el.textContent = '⚠ Erro de conexão';
+    el.style.color = '#FCA5A5';
+    el.title = erro || 'Não foi possível conectar ao Firebase';
+    if(erro) console.error('[painel] status erro:', erro);
+  }
 }
 
 function diasAteVenc(c){
