@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Diagnóstico Firebase — Painel do Dono</title>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
+<style>
+  body{font-family:system-ui,sans-serif;background:#0d1f40;color:#e8f0ff;padding:24px;line-height:1.6}
+  h1{color:#C9A84C;font-size:20px;margin-bottom:16px}
+  .box{background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.1);border-radius:12px;padding:18px;margin-bottom:14px}
+  .ok{color:#4ADE80;font-weight:700}
+  .erro{color:#FCA5A5;font-weight:700}
+  .aviso{color:#FCD34D}
+  pre{background:rgba(0,0,0,.3);padding:12px;border-radius:8px;overflow-x:auto;font-size:12px;white-space:pre-wrap}
+  button{background:#C9A84C;color:#0A1A30;border:none;padding:12px 24px;border-radius:10px;font-weight:800;cursor:pointer;font-size:15px}
+</style>
+</head>
+<body>
+  <h1>🔍 Diagnóstico do Firebase — Painel do Dono</h1>
+  <p>Esta página verifica o que está salvo no seu Firebase. Nada é apagado.</p>
+  <button onclick="diagnosticar()">Verificar meus dados</button>
+  <div id="resultado" style="margin-top:20px"></div>
+
+<script>
+const FB_CONFIG = {
+  apiKey: "AIzaSyDI_AfOK3A9LI_xqTyxtnV1oYSk3rtife0",
+  authDomain: "painel-do-dono.firebaseapp.com",
+  projectId: "painel-do-dono",
+  storageBucket: "painel-do-dono.firebasestorage.app",
+  messagingSenderId: "44627900780",
+  appId: "1:44627900780:web:d9b4f5888cefef02395b49"
+};
+
+function log(html){ document.getElementById('resultado').innerHTML += html; }
+
+async function diagnosticar(){
+  document.getElementById('resultado').innerHTML='';
+  let db;
+  try{
+    firebase.initializeApp(FB_CONFIG);
+    db=firebase.firestore();
+    log('<div class="box"><span class="ok">✓ Conectou ao Firebase painel-do-dono</span></div>');
+  }catch(e){
+    log('<div class="box"><span class="erro">✗ Erro ao conectar: '+e.message+'</span></div>');
+    return;
+  }
+
+  // 1. lê a lista de clientes
+  try{
+    const doc=await db.collection('painel').doc('clientes').get();
+    if(doc.exists){
+      const lista=doc.data().lista||[];
+      log('<div class="box"><span class="ok">✓ Documento painel/clientes EXISTE</span><br>'+
+          'Clientes salvos: <b>'+lista.length+'</b><br>'+
+          'Última atualização: '+(doc.data().atualizadoEm||'?')+
+          '<pre>'+JSON.stringify(lista.map(c=>({nome:c.nome,empresa:c.empresa,ativo:c.ativo})),null,2)+'</pre></div>');
+    }else{
+      log('<div class="box"><span class="aviso">⚠ Documento painel/clientes NÃO existe (vazio)</span><br>Seus clientes não estão salvos neste documento.</div>');
+    }
+  }catch(e){
+    log('<div class="box"><span class="erro">✗ Erro ao ler painel/clientes: '+e.code+' - '+e.message+'</span><br>Se for "permission-denied", as regras não estão liberando esta coleção.</div>');
+  }
+
+  // 2. lê a fila de espera
+  try{
+    const snap=await db.collection('aguardando').get();
+    log('<div class="box"><span class="ok">✓ Coleção aguardando acessível</span><br>Registros: <b>'+snap.size+'</b></div>');
+  }catch(e){
+    log('<div class="box"><span class="erro">✗ Erro ao ler aguardando: '+e.code+' - '+e.message+'</span></div>');
+  }
+
+  // 3. lê contratos
+  try{
+    const snap=await db.collection('contratos').get();
+    log('<div class="box"><span class="ok">✓ Coleção contratos acessível</span><br>Contratos assinados: <b>'+snap.size+'</b></div>');
+  }catch(e){
+    log('<div class="box"><span class="erro">✗ Erro ao ler contratos: '+e.code+' - '+e.message+'</span></div>');
+  }
+
+  log('<div class="box">Diagnóstico concluído. Me envie um print deste resultado.</div>');
+}
+</script>
+</body>
+</html>
