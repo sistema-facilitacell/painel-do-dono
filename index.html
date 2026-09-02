@@ -361,24 +361,26 @@ async function carregar(){
   // 1) cache local imediato (para não ficar tela vazia)
   try{ CLIENTES=JSON.parse(localStorage.getItem(STORE_KEY)||'[]'); }catch(_){ CLIENTES=[]; }
   render();
-  // 2) busca da nuvem (fonte da verdade) — isolado, não deixa nada travar
+  // 2) busca da nuvem (fonte da verdade) — com TIMEOUT para nunca travar
   try{
     const db=_getPainelDB();
-    const doc=await db.collection('painel').doc('clientes').get();
+    // corrida entre a leitura e um tempo limite de 8 segundos
+    const leitura = db.collection('painel').doc('clientes').get();
+    const timeout = new Promise((_, rej)=> setTimeout(()=> rej(new Error('Tempo esgotado — o Firebase não respondeu em 8s. Verifique as regras do Firestore ou sua conexão.')), 8000));
+    const doc = await Promise.race([leitura, timeout]);
     if(doc.exists && Array.isArray(doc.data().lista)){
       CLIENTES=doc.data().lista;
       localStorage.setItem(STORE_KEY, JSON.stringify(CLIENTES)); // atualiza cache
       render();
       _statusNuvem(true);
     }else if(CLIENTES.length){
-      // nuvem vazia mas tenho dados locais → sobe para a nuvem (sem travar o resto)
       _salvarNuvem();
       _statusNuvem(true);
     }else{
       _statusNuvem(true); // conectou, mas está tudo vazio mesmo
     }
   }catch(e){
-    console.error('[painel] erro ao ler clientes da nuvem:', e.code, e.message);
+    console.error('[painel] erro ao ler clientes da nuvem:', e.code||'', e.message);
     _statusNuvem(false, e.message);
   }
   // carrega a fila de espera SEPARADAMENTE (um erro aqui não afeta os clientes)
@@ -470,6 +472,8 @@ async function _salvarNuvem(){
 function _statusNuvem(ok, erro){
   const el=document.getElementById('sync-status');
   if(!el) return;
+  const bannerAntigo=document.getElementById('erro-conexao-banner');
+  if(bannerAntigo) bannerAntigo.remove();
   if(ok){
     el.textContent = '☁ Salvo na nuvem';
     el.style.color = '#4ADE80';
@@ -479,6 +483,17 @@ function _statusNuvem(ok, erro){
     el.style.color = '#FCA5A5';
     el.title = erro || 'Não foi possível conectar ao Firebase';
     if(erro) console.error('[painel] status erro:', erro);
+    // mostra um banner visível na tela com o erro e botão de tentar de novo
+    const wrap=document.querySelector('.wrap');
+    if(wrap){
+      const banner=document.createElement('div');
+      banner.id='erro-conexao-banner';
+      banner.style.cssText='background:#FEF2F2;border:1px solid #FECACA;border-radius:12px;padding:16px 18px;margin-bottom:16px;color:#991B1B';
+      banner.innerHTML='<div style="font-weight:800;margin-bottom:4px">⚠ Não consegui conectar ao Firebase</div>'+
+        '<div style="font-size:13px;margin-bottom:10px">'+(erro||'')+'</div>'+
+        '<button onclick="carregar()" style="background:#DC2626;color:#fff;border:none;padding:9px 18px;border-radius:9px;font-weight:700;cursor:pointer">🔄 Tentar novamente</button>';
+      wrap.insertBefore(banner, wrap.firstChild);
+    }
   }
 }
 
